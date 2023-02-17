@@ -2,6 +2,8 @@
 import React,{ useState, useEffect } from "react";
 import Web3Modal from "web3modal";
 import {ethers} from "ethers";
+import { providers, Contract } from "ethers";
+import { useRef} from "react";
 
 import { contractAddress, contractABI} from "./constants"
 import candidateList from "./Voting.json"
@@ -11,84 +13,126 @@ const fetchContract = (signerOrProvider) => new ethers.Contract(contractAddress,
 export const VotingContext = React.createContext();
 
 export const VotingProvider = ({children}) => {
-    const [currentAccount, setCurrentAccount] = useState("");
-    const [Loading, setLoading] = useState(false);
-    const [candidate, setCandidate] = useState("")
-    const [winnerName, setWinnerName] = useState("")
+    const [walletConnected, setWalletConnected] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const [isUserLoggedIn, setIsUserLoggedIn] = useState(false)
+    const [candidateList, setCandidateList] = useState([])
+    const [name, setName] = useState("");
+    const [age, setAge] = useState("");
+    const [address, setAddress] = useState("");
+    const [voterAddress, setVoterAddress] = useState("")
+    const [winner, setWinner] = useState("")
+    const [vote, setVote] = useState("");
 
-    const checkIsWalletConnected = async () => {
-        if(!window.ethereum)
-           return alert("Please install Metamask");
 
-        const accounts = await window.ethereum.request({method: "eth_accounts"});
-
-        if(accounts.length) {
-            setCurrentAccount(accounts[0])
-        } else {
-            alert("No accounts found")
-        }
-        console.log(accounts)
-    }
-
+    const web3ModalRef = useRef();
+  
+  
+    const getProviderOrSigner = async (needSigner = false) => {
+      const connection = await web3ModalRef.current.connect();
+      const provider = new providers.Web3Provider(connection);
+  
+      const { chainId } = await provider.getNetwork();
+      if (chainId !== 5) {
+        window.alert("Change the network to Goerli");
+        throw new Error("Change network to Goerli");
+      }
+  
+      if (needSigner) {
+        const signer = provider.getSigner();
+        return signer;
+      }
+      return provider;
+    };
+  
+   
+    const connectWallet = async () => {
+      try {
+        await getProviderOrSigner();
+        setWalletConnected(true);
+        setIsUserLoggedIn(true)
+  
+      } catch (err) {
+        console.error(err);
+      }
+    };
+  
+    
     useEffect(() => {
-        checkIsWalletConnected();
-    },[])
+      if (!walletConnected) {
+        web3ModalRef.current = new Web3Modal({
+          network: "goerli",
+          providerOptions: {},
+          disableInjectedProvider: false,
+        });
+        connectWallet();
+      }
+  
+    }, [walletConnected])
 
-    const connectWallet = async() => {
-        if(!window.ethereum)
-           return alert("Please install Metamask");
+    const registerCandidates = async(e) => {
+        // To avoid refresh, use e.preventDefault()
+        e.preventDefault()
 
-        const accounts = await window.ethereum.request({method: "eth_requestAccounts"});
-        setCurrentAccount(accounts[0]);
-        window.location.reload();
-
-    }
-
-    const connectingWithContract = async () => {
-        try {
-          const web3modal = new Web3Modal();
-          const connection = await web3modal.connect();
-          const provider = new ethers.providers.Web3Provider(connection);
-          const signer = provider.getSigner();
-          const contract = fetchContract(signer);
-          return contract;
-        } catch (error) {
-          console.log(error);
+        let candidate = {
+            name: name,
+            age: age,
+            address: address
         }
-      };
 
-    const registerCandidates = async(_name, _age, _candidateAddress) => {
         try {
-            const contract = await connectingWithContract();
-            const registerCandidate = await contract.registerCandidates(_name, Number(_age), _candidateAddress);
-            // setLoading(true);
+            const signer = await getProviderOrSigner(true);
+            const VotingContract = fetchContract(signer);
+            const registerCandidate = await VotingContract.registerCandidates(candidate.name, candidate.age, candidate.address);
+            setCandidateList([...candidateList, candidate])
+            console.log("Candidate is registered successfully")
+            console.log(registerCandidate)
+            setLoading(true);
             await registerCandidate.wait();
-            // setLoading(false);
+            setLoading(false);
             window.location.reload();
+
         } 
         catch (error) {
             alert("Error while registering candidate") 
         }
+        setName("");
+        setAge("");
+        setAddress("");
     }
 
-    const whiteListAddress = async(_voterAddress) => {
+
+    const whiteListAddress = async(e) => {
+        // To avoid refresh, use e.preventDefault()
+        e.preventDefault()
+
+        let voter = {
+            address: voterAddress
+        }
+
         try {
-            const contract = await connectingWithContract();
-            const whiteListAddress = await contract.whiteListAddress(_voterAddress);
-            console.log(whiteListAddress)
+            const signer = await getProviderOrSigner(true);
+            const VotingContract = fetchContract(signer);
+            const whiteListAddress = await VotingContract.whiteListAddress(voter.address);
+            setVoterAddress(voter)
+            console.log("Voter is registered successfully")
             setLoading(true);
             await whiteListAddress.wait();
             setLoading(false);
             window.location.reload();
-        } catch (error) {
-            alert("Error while whiteListing voter addresses")
+        } 
+        catch (error) {
+            alert("Error while registering voter") 
         }
+        setVoterAddress("");
     }
+    
 
     const startVoting = async() => {
         try {
-            const contract = await connectingWithContract();
-            const startVoting = await contract.startVoting();
+            const signer = await getProviderOrSigner(true);
+            const VotingContract = fetchContract(signer);
+            const startVoting = await VotingContract.startVoting();
             setLoading(true);
             await startVoting.wait();
             setLoading(false);
@@ -101,8 +145,9 @@ export const VotingProvider = ({children}) => {
 
     const stopVoting = async() => {
         try {
-            const contract = await connectingWithContract();
-            const stopVoting = await contract.stopVoting();
+            const signer = await getProviderOrSigner(true);
+            const VotingContract = fetchContract(signer);
+            const stopVoting = await VotingContract.stopVoting();
             setLoading(true);
             await stopVoting.wait();
             setLoading(false);
@@ -113,62 +158,74 @@ export const VotingProvider = ({children}) => {
         }
     }
 
-    const vote = async(_candidateAddress) => {
-        try {
-            const contract = await connectingWithContract();
-            const vote = await contract.vote(_candidateAddress);
-            setLoading(true);
-            await vote.wait();
-            setLoading(false);
-            window.location.reload();
-            
-        } catch (error) {
-            alert("Error while voting the candidate")
-        }
-    }
+    const voteCandidate = async(e) => {
+         // To avoid refresh, use e.preventDefault()
+         e.preventDefault()
 
-    const getAllCandidate = async() => {
-        try {
-            const contract = await connectingWithContract();
-            const getAllCandidate = await contract.getAllCandidate();
+         let candidate = {
+             address: address
+         }
+ 
+         try {
+             const signer = await getProviderOrSigner(true);
+             const VotingContract = fetchContract(signer);
+             const voteCandidate = await VotingContract.vote(candidate.address);
+             setVote(voteCandidate)
+             console.log("You have voted successfully")
+             setLoading(true);
+             await voteCandidate.wait();
+             setLoading(false);
+             window.location.reload();
+         } 
+         catch (error) {
+             alert("Error while voting candidate") 
+         }
+     }
 
-            for(let i=1; i<getAllCandidate.length; i++){
-                candidateList.push(getAllCandidate[i])
-            }
+    // const getAllCandidate = async() => {
+    //     try {
+    //         const contract = await connectingWithContract();
+    //         const getAllCandidate = await contract.getAllCandidate();
+
+    //         for(let i=1; i<getAllCandidate.length; i++){
+    //             candidateList.push(getAllCandidate[i])
+    //         }
     
-            setLoading(true);
-            await getAllCandidate.wait();
-            setLoading(false);
-            window.location.reload();
+    //         setLoading(true);
+    //         await getAllCandidate.wait();
+    //         setLoading(false);
+    //         window.location.reload();
             
-        } catch (error) {
-            alert("Error while loading the candidates")
-        }
-    }
+    //     } catch (error) {
+    //         alert("Error while loading the candidates")
+    //     }
+    // }
 
-    const votingStatus = async() => {
-        try {
-            const contract = await connectingWithContract();
-            const votingStatus = await contract.votingStatus();
-            setLoading(true);
-            await votingStatus.wait();
-            setLoading(false);
-            window.location.reload();
+    // const votingStatus = async() => {
+    //     try {
+    //         const contract = await connectingWithContract();
+    //         const votingStatus = await contract.votingStatus();
+    //         setLoading(true);
+    //         await votingStatus.wait();
+    //         setLoading(false);
+    //         window.location.reload();
             
-        } catch (error) {
-            alert("Error while fethching voting status")
-        }
-    }
+    //     } catch (error) {
+    //         alert("Error while fethching voting status")
+    //     }
+    // }
 
-    const winner = async() => {
+    const getWinner = async(e) => {
+        e.preventDefault()
+
         try {
-            const contract = await connectingWithContract();
-            const winner = await contract.winner();
-            setWinnerName(winner.name);
+            const signer = await getProviderOrSigner(true);
+            const VotingContract = fetchContract(signer);
+            const getWinner = await VotingContract.getWinner();
+            setWinner(getWinner.name);
             setLoading(true);
             await winner.wait();
             setLoading(false);
-            window.location.reload();
             
         } catch (error) {
             alert("Error while picking winner")
@@ -177,7 +234,10 @@ export const VotingProvider = ({children}) => {
 
 
     return(
-        <VotingContext.Provider value={{registerCandidates, connectWallet, whiteListAddress, startVoting, stopVoting, vote, getAllCandidate, votingStatus, winner}} >{children}
+        <VotingContext.Provider value={{connectWallet,candidateList, name, setName, age, setAge, address, setAddress, registerCandidates, voterAddress, setVoterAddress, whiteListAddress, startVoting, stopVoting, winner, setWinner, getWinner, voteCandidate}} >
+            {children}
         </VotingContext.Provider>
     )
-}
+    }
+
+

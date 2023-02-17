@@ -4,7 +4,8 @@ import {useContext} from "react"
 import { VotingContext } from '../context/VotingContext'
 
 const Navbar = () => {
-  const {connectWallet} = useContext(VotingContext)
+  const {connectWallet} = useContext(VotingContext);
+  
   return (
     <div className="flex justify-end mt-10  ">
        <div className="flex-1 text-3xl font-bold mx-5 ">
